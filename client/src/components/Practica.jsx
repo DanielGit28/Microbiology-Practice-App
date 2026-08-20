@@ -5,8 +5,8 @@ import { generarPreguntaPractica, generarExplicacionExtendida } from "../api/api
 
 const LETRAS = ["A", "B", "C", "D", "E"];
 
-export default function Practica({ onBack, registrar }) {
-  const [areaId, setAreaId] = useState(AREAS[0].id);
+export default function Practica({ onBack, registrar, perfilId, favoritos, seedPregunta }) {
+  const [areaId, setAreaId] = useState(seedPregunta ? seedPregunta.area_id : AREAS[0].id);
   const [kevin, setKevin] = useState(false);
   const [pregunta, setPregunta] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
@@ -18,7 +18,7 @@ export default function Practica({ onBack, registrar }) {
   const [loadingExplicacion, setLoadingExplicacion] = useState(false);
 
   const area = areaById(areaId);
-
+  
   function nuevaPregunta() {
     setLoading(true);
     setError(null);
@@ -28,7 +28,7 @@ export default function Practica({ onBack, registrar }) {
     setMostrarPista(false);
     setExplicacionExtendida(null);
 
-    generarPreguntaPractica(area, kevin)
+    generarPreguntaPractica(area, kevin, perfilId, seedPregunta)
       .then((q) => {
         setPregunta(q);
         setLoading(false);
@@ -94,6 +94,12 @@ export default function Practica({ onBack, registrar }) {
             {pregunta ? "Nueva pregunta" : "Generar pregunta"}
           </button>
         </div>
+        {seedPregunta && (
+          <div className="callout callout-hint" style={{ marginTop: 14 }}>
+            <strong>Basado en una favorita — {areaById(seedPregunta.area_id)?.name || "esta área"}</strong>
+            <em>"{seedPregunta.pregunta}"</em>
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -122,6 +128,18 @@ export default function Practica({ onBack, registrar }) {
             <span className={"tag " + (pregunta.dificultad === "kevin" ? "kevin" : "normal")}>
               {pregunta.dificultad === "kevin" ? "🔥 Kevin" : "Estándar"}
             </span>
+            {favoritos && (
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={!pregunta.id}
+                onClick={() =>
+                  favoritos.esFavorito(pregunta.id) ? favoritos.quitar(pregunta.id) : favoritos.agregar(pregunta, areaId)
+                }
+                title={!pregunta.id ? "No se pudo guardar esta pregunta" : undefined}
+              >
+                {favoritos.esFavorito(pregunta.id) ? "★ Favorita" : "☆ Guardar en favoritos"}
+              </button>
+            )}
           </div>
           <p className="q-text">{pregunta.pregunta}</p>
           <div className="opciones">

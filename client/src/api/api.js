@@ -7,9 +7,15 @@ import {
 } from "../data/mockData.js";
 import { AREAS } from "../data/areas.js";
 
-// Cambia esto a false cuando ya tengas server/ corriendo con tu ANTHROPIC_API_KEY.
-// Ver README.md en la raíz del proyecto.
-export const MOCK_MODE = true;
+// Cambia esto a false cuando ya tengas server/ corriendo con tu ANTHROPIC_API_KEY
+// (o GROQ_API_KEY, según PROVIDER más abajo). Ver README.md en la raíz del proyecto.
+export const MOCK_MODE = false;
+
+// Solo importa cuando MOCK_MODE es false: qué API real usar para generar.
+// "claude" -> Anthropic (server/.env: ANTHROPIC_API_KEY). "groq" -> Groq
+// (server/.env: GROQ_API_KEY), útil para probar gratis/barato antes de
+// pagar la API de Claude.
+export const PROVIDER = "groq"; // "claude" | "groq"
 
 const SYS_GENERADOR =
   "Eres un generador experto de preguntas para las Pruebas de Grado (examen escrito) de la carrera de " +
@@ -26,7 +32,8 @@ const ESTILO_KEVIN =
   "inventes organismos ni datos falsos.";
 
 async function callBackend(system, user) {
-  const res = await fetch("/api/generate", {
+  const endpoint = PROVIDER === "groq" ? "/api/generate-groq" : "/api/generate";
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system, user })
@@ -37,6 +44,48 @@ async function callBackend(system, user) {
   }
   const data = await res.json();
   return data.text;
+}
+
+// ---------- Preguntas y favoritos (persistencia en el servidor) ----------
+// Toda pregunta generada (mock o real) se guarda para poder favoritearla
+// después. Si falla (p. ej. sin DATABASE_URL local), no debe romper el
+// flujo de la pregunta: se resuelve con null y el botón de favorito queda
+// deshabilitado en la UI.
+async function guardarPregunta(payload) {
+  try {
+    const res = await fetch("/api/preguntas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function listarFavoritos(perfilId) {
+  const res = await fetch("/api/favoritos?perfilId=" + perfilId);
+  if (!res.ok) throw new Error("No se pudieron cargar los favoritos (" + res.status + ")");
+  return res.json();
+}
+
+export async function favoritoAgregar(perfilId, preguntaId) {
+  const res = await fetch("/api/favoritos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ perfilId, preguntaId })
+  });
+  if (!res.ok) throw new Error("No se pudo guardar el favorito (" + res.status + ")");
+  return res.json();
+}
+
+export async function favoritoQuitar(favoritoId) {
+  const res = await fetch("/api/favoritos/" + favoritoId, { method: "DELETE" });
+  if (!res.ok) throw new Error("No se pudo quitar el favorito (" + res.status + ")");
+  return res.json();
 }
 
 function parseJSON(text) {
@@ -54,7 +103,29 @@ function parseJSON(text) {
   return JSON.parse(clean);
 }
 
-export async function generarLoteSimulacro(areasConConteo) {
+export async function generarLoteSimulacro(areasConConteo, perfilId) {
+  const lote = await generarLoteSimulacroBase(areasConConteo);
+  const conIds = await Promise.all(
+    lote.map(async (p) => {
+      const area = AREAS.find((a) => a.name === p.area);
+      const id = await guardarPregunta({
+        areaId: area ? area.id : p.area,
+        modo: "simulacro",
+        pregunta: p.pregunta,
+        opciones: p.opciones,
+        respuestaCorrecta: p.respuesta_correcta,
+        explicacion: p.explicacion,
+        pista: p.pista || null,
+        dificultad: p.dificultad,
+        perfilId
+      });
+      return { ...p, id };
+    })
+  );
+  return conIds;
+}
+
+async function generarLoteSimulacroBase(areasConConteo) {
   if (MOCK_MODE) return mockSimulacroBatch(areasConConteo);
 
   const listado = areasConConteo
@@ -88,8 +159,37 @@ export async function generarLoteSimulacro(areasConConteo) {
   return Array.isArray(r) ? r : [r];
 }
 
-export async function generarPreguntaPractica(area, kevin) {
+export async function generarPreguntaPractica(area, kevin, perfilId, seedPregunta) {
+  const q = await generarPreguntaPracticaBase(area, kevin, seedPregunta);
+  const id = await guardarPregunta({
+    areaId: area.id,
+    modo: "practica",
+    pregunta: q.pregunta,
+    opciones: q.opciones,
+    respuestaCorrecta: q.respuesta_correcta,
+    explicacion: q.explicacion,
+    pista: q.pista || null,
+    dificultad: q.dificultad,
+    perfilId,
+    seedPreguntaId: seedPregunta ? seedPregunta.id : null
+  });
+  return { ...q, id };
+}
+
+async function generarPreguntaPracticaBase(area, kevin, seedPregunta) {
   if (MOCK_MODE) return mockPracticaQuestion(area, kevin);
+
+  const referenciaSeed = seedPregunta
+    ? "\n\nEsta pregunta de referencia es SOLO para calibrar estilo y nivel de dificultad — NO la repitas ni la " +
+      "parafrasees. Genera una pregunta DIFERENTE, sobre otro organismo, concepto o matiz del mismo tema:\n" +
+      'Pregunta de referencia: "' +
+      seedPregunta.pregunta +
+      '"\nOpciones: ' +
+      seedPregunta.opciones.join(" / ") +
+      '\nRespuesta correcta de referencia: "' +
+      seedPregunta.opciones[seedPregunta.respuesta_correcta] +
+      '"'
+    : "";
 
   const user =
     'Área: "' +
@@ -101,6 +201,7 @@ export async function generarPreguntaPractica(area, kevin) {
       ? " " + ESTILO_KEVIN + " Esta pregunta debe ser 'kevin'."
       : " Nivel estándar de examen de grado, bien fundamentada, con distractores plausibles pero justos " +
         "('dificultad':'normal').") +
+    referenciaSeed +
     "\n\nDevuelve SOLO este JSON:\n" +
     '{"pregunta":"...","opciones":["...","...","...","..."],"respuesta_correcta":0,"pista":"...",' +
     '"explicacion":"...","dificultad":"' +
@@ -113,7 +214,7 @@ export async function generarPreguntaPractica(area, kevin) {
 }
 
 export async function generarExplicacionExtendida(area, pregunta) {
-  if (MOCK_MODE) return mockExtendedExplanation(area);
+  if (MOCK_MODE) return mockExtendedExplanation(area, pregunta);
 
   const sys =
     "Eres un profesor experto en microbiología y química clínica, preparando a una estudiante para su examen " +

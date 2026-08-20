@@ -1,10 +1,10 @@
 import Header from "./Header.jsx";
 import ProgresoPanel from "./ProgresoPanel.jsx";
 
-export default function Home({ onNavigate, progreso }) {
+export default function Home({ onNavigate, progreso, perfilNombre, onCambiarPerfil }) {
   return (
     <>
-      <Header />
+      <Header perfilNombre={perfilNombre} onCambiarPerfil={onCambiarPerfil} />
       <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 20 }}>
         Tres formas de repasar antes de la Prueba de Grado. Las preguntas se generan al momento, así que nunca
         son exactamente iguales.
@@ -42,6 +42,17 @@ export default function Home({ onNavigate, progreso }) {
           <h3 className="card-title">Modo oral</h3>
           <p className="card-desc">
             3 preguntas abiertas al azar. Escribe o dicta tu respuesta y recibe retroalimentación tipo tribunal.
+          </p>
+        </button>
+
+        <button className="card" onClick={() => onNavigate("favoritos")}>
+          <div className="card-top">
+            <span className="cap safranin" />
+            <span className="card-id">MUESTRA-04</span>
+          </div>
+          <h3 className="card-title">Favoritos</h3>
+          <p className="card-desc">
+            Vuelve a las preguntas que guardaste y genera preguntas nuevas parecidas a una de ellas.
           </p>
         </button>
       </div>

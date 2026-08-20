@@ -7,7 +7,7 @@ import { useCountdown } from "../hooks/useCountdown.js";
 
 const LETRAS = ["A", "B", "C", "D", "E"];
 
-export default function Simulacro({ onBack, registrar }) {
+export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
   const [status, setStatus] = useState("idle"); // idle | loading | active | finished | error
   const [preguntas, setPreguntas] = useState([]);
   const [respuestas, setRespuestas] = useState([]);
@@ -27,7 +27,7 @@ export default function Simulacro({ onBack, registrar }) {
       pares.push(SIMULACRO_PLAN.slice(i, i + 2));
     }
 
-    Promise.all(pares.map((p) => generarLoteSimulacro(p)))
+    Promise.all(pares.map((p) => generarLoteSimulacro(p, perfilId)))
       .then((lotes) => {
         const todas = [];
         lotes.forEach((l) => {
@@ -229,6 +229,19 @@ export default function Simulacro({ onBack, registrar }) {
                         <span className={"tag " + (p.dificultad === "kevin" ? "kevin" : "normal")}>
                           {p.dificultad === "kevin" ? "🔥 Kevin" : "Estándar"}
                         </span>
+                        {favoritos && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={!p.id}
+                            onClick={() => {
+                              const area = AREAS.find((a) => a.name === p.area);
+                              favoritos.esFavorito(p.id) ? favoritos.quitar(p.id) : favoritos.agregar(p, area?.id);
+                            }}
+                            title={!p.id ? "No se pudo guardar esta pregunta" : undefined}
+                          >
+                            {favoritos.esFavorito(p.id) ? "★ Favorita" : "☆ Guardar en favoritos"}
+                          </button>
+                        )}
                       </div>
                       <p className="q-text" style={{ fontSize: 14 }}>
                         {i + 1}. {p.pregunta}
