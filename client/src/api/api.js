@@ -88,19 +88,44 @@ export async function favoritoQuitar(favoritoId) {
   return res.json();
 }
 
+// Encuentra el primer objeto/array JSON balanceado dentro del texto, e
+// ignora cualquier cosa antes o después (fences de markdown, texto
+// introductorio, o basura al final que a veces agregan modelos como los de
+// Groq — p. ej. una "}" extra después del cierre real). No basta con tomar
+// el último "}" o "]" del texto: hay que contar profundidad del tipo de
+// paréntesis correcto y no contar los que están dentro de strings.
 function parseJSON(text) {
-  let clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  const first = Math.min(
-    ...["[", "{"].map((c) => {
-      const i = clean.indexOf(c);
-      return i === -1 ? Infinity : i;
-    })
-  );
-  const last = Math.max(clean.lastIndexOf("}"), clean.lastIndexOf("]"));
-  if (first !== Infinity && last !== -1 && last > first) {
-    clean = clean.substring(first, last + 1);
+  const clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  const first = clean.search(/[[{]/);
+  if (first === -1) return JSON.parse(clean);
+
+  const openChar = clean[first];
+  const closeChar = openChar === "[" ? "]" : "}";
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let end = -1;
+
+  for (let i = first; i < clean.length; i++) {
+    const ch = clean[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === openChar) depth++;
+    else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
   }
-  return JSON.parse(clean);
+
+  return JSON.parse(end !== -1 ? clean.slice(first, end + 1) : clean);
 }
 
 export async function generarLoteSimulacro(areasConConteo, perfilId) {
