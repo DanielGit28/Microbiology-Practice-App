@@ -7,9 +7,13 @@ App de repaso para las Pruebas de Grado de Microbiología y Química Clínica.
 
 ```
 incubadora-pdg/
-  client/     -> app de React (Vite). Esto es lo que se ve en el navegador.
-  server/     -> servidor Express: perfiles/progreso (Postgres/Neon, siempre)
-                 y proxy a la API de Anthropic (solo si MOCK_MODE es false).
+  client/       -> app de React (Vite). Esto es lo que se ve en el navegador.
+  server/       -> servidor Express: perfiles/progreso (Postgres/Neon, siempre)
+                   y proxy a Claude/Groq (solo si MOCK_MODE es false). Se
+                   corre directo con "npm start" en desarrollo local.
+  api/index.js  -> mismo server/index.js, envuelto como función serverless
+                   para Vercel (no se usa en desarrollo local).
+  vercel.json   -> config de build/rutas para desplegar el monorepo en Vercel.
 ```
 
 ## 0. El servidor siempre tiene que estar corriendo
@@ -68,9 +72,50 @@ debe estar corriendo, con `ANTHROPIC_API_KEY` puesta en `server/.env`):
    hacia tu servidor local en el puerto 8787, así que no hay problemas de
    CORS ni necesidad de exponer la llave en el navegador.
 
-> Importante: nunca pongas tu `ANTHROPIC_API_KEY` directamente en el código
-> del cliente (`client/`). El navegador es público — cualquiera que abra
-> las herramientas de desarrollador la vería. Por eso existe `server/`.
+> Importante: nunca pongas tu `ANTHROPIC_API_KEY` (ni `GROQ_API_KEY`)
+> directamente en el código del cliente (`client/`). El navegador es
+> público — cualquiera que abra las herramientas de desarrollador la vería.
+> Por eso existe `server/`.
+
+También puedes usar Groq en vez de Claude para generar (más barato/gratis
+para probar): pon `GROQ_API_KEY` en `server/.env` y `PROVIDER = "groq"` en
+`client/src/api/api.js` (junto a `MOCK_MODE = false`). Ver comentario en ese
+archivo.
+
+## 3. Desplegar en Vercel
+
+El repo es un monorepo (`client/` + `server/`), así que Vercel necesita
+ayuda para saber qué construir y cómo servir la API. Ya está configurado:
+
+- `vercel.json` (raíz) le dice a Vercel que instale y compile `client/` como
+  el sitio estático, y reenvíe todo `/api/*` hacia una función serverless.
+- `api/index.js` (raíz) envuelve la app de Express de `server/index.js` como
+  función serverless — no hay servidor persistente en producción, cada
+  request la maneja Vercel bajo demanda. `server/index.js` sigue
+  funcionando igual para desarrollo local (`npm start`/`npm run dev`
+  siguen levantando el servidor de siempre).
+
+Pasos en el dashboard de Vercel (Project Settings), una sola vez:
+
+1. **General → Root Directory**: debe estar vacío (la raíz del repo), NO
+   `client/`. Si tu proyecto ya estaba conectado apuntando a `client/`,
+   cámbialo — si no, Vercel nunca va a ver `vercel.json` ni `api/`.
+2. **Environment Variables**: agrega `DATABASE_URL` (tu cadena de Neon) y
+   `ANTHROPIC_API_KEY` (y/o `GROQ_API_KEY` si vas a usar Groq). Estas nunca
+   viven en el repo (`server/.env` está en `.gitignore`), hay que pegarlas
+   ahí para que la función serverless las tenga en producción.
+3. En `client/src/api/api.js`, antes de desplegar, pon `MOCK_MODE = false`
+   y el `PROVIDER` que quieras usar en producción — son constantes que se
+   compilan dentro del bundle de Vite, no variables de entorno de Vercel.
+4. Vuelve a desplegar (push a la rama conectada, o "Redeploy" en el
+   dashboard) para que tome el `Root Directory` y las variables nuevas.
+
+Notas:
+- La tabla `preguntas`/`favoritos`/etc. se crea sola en el primer request a
+  producción (`initSchema()` corre igual en la función serverless).
+- Usa la cadena de conexión "pooled" de Neon (con `-pooler` en el host,
+  como ya tienes en `.env`) — es la que funciona bien con funciones
+  serverless que abren/cierran conexiones seguido.
 
 ## Dónde tocar cada cosa
 

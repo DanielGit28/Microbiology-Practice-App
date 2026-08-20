@@ -327,13 +327,23 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-initSchema()
-  .catch((err) => console.error("No se pudo inicializar el esquema de la base de datos:", err.message))
-  .finally(() => {
-    app.listen(PORT, () => {
-      console.log(`Servidor de Incubadora escuchando en http://localhost:${PORT}`);
-      if (!fs.existsSync(clientDist)) {
-        console.log("(client/dist no existe todavía — corre 'npm run build' en client/ si quieres servir la UI desde aquí)");
-      }
+// En Vercel esto corre como función serverless (ver api/index.js en la raíz
+// del repo): no hay proceso persistente que escuchar, Vercel invoca la app
+// de Express directamente por request. process.env.VERCEL lo pone Vercel
+// automáticamente en build y en runtime.
+if (process.env.VERCEL) {
+  initSchema().catch((err) => console.error("No se pudo inicializar el esquema de la base de datos:", err.message));
+} else {
+  initSchema()
+    .catch((err) => console.error("No se pudo inicializar el esquema de la base de datos:", err.message))
+    .finally(() => {
+      app.listen(PORT, () => {
+        console.log(`Servidor de Incubadora escuchando en http://localhost:${PORT}`);
+        if (!fs.existsSync(clientDist)) {
+          console.log("(client/dist no existe todavía — corre 'npm run build' en client/ si quieres servir la UI desde aquí)");
+        }
+      });
     });
-  });
+}
+
+export default app;
