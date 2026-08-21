@@ -13,7 +13,13 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8787;
 const MODEL = "claude-sonnet-4-6";
-const GROQ_MODEL = "openai/gpt-oss-20b";
+// openai/gpt-oss-20b tiene solo 8K TPM en el plan gratuito de Groq (se
+// agota rápido, sobre todo compartido entre todo el uso de la app
+// deployada). groq/compound-mini tiene 70K TPM en el mismo plan gratuito —
+// bastante más margen — a cambio de ser un sistema agéntico (puede invocar
+// herramientas internamente); hay que confirmar que igual respeta el
+// formato "responde SOLO con este JSON" que pedimos en los prompts.
+const GROQ_MODEL = "groq/compound-mini";
 
 // ---------- API de Claude (proxy) ----------
 app.post("/api/generate", async (req, res) => {
