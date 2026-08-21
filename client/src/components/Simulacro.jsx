@@ -3,69 +3,79 @@ import Header from "./Header.jsx";
 import Dial from "./Dial.jsx";
 import { AREAS, SIMULACRO_PLAN, SIMULACRO_TOTAL_SECS } from "../data/areas.js";
 import { generarLoteSimulacro } from "../api/api.js";
-import { useCountdown } from "../hooks/useCountdown.js";
+import { useSesionPersistida } from "../hooks/useSesionPersistida.js";
+import { useSegundosRestantes } from "../hooks/useSegundosRestantes.js";
 
 const LETRAS = ["A", "B", "C", "D", "E"];
 
 export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
-  const [status, setStatus] = useState("idle"); // idle | loading | active | finished | error
-  const [preguntas, setPreguntas] = useState([]);
-  const [respuestas, setRespuestas] = useState([]);
-  const [indexActual, setIndexActual] = useState(0);
+  const { sesion, setSesion, limpiar } = useSesionPersistida(perfilId, "simulacro");
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
-  const countdown = useCountdown(SIMULACRO_TOTAL_SECS);
+  const segundosRestantes = useSegundosRestantes(sesion?.finalizaEn, SIMULACRO_TOTAL_SECS);
 
-  function iniciar() {
-    setStatus("loading");
+  async function iniciar() {
+    setLoading(true);
     setLoadError(null);
 
     // Se agrupan las 14 áreas de 2 en 2 para mantener cada llamada a la API
-    // liviana (menos riesgo de respuestas truncadas o JSON inválido).
+    // liviana (menos riesgo de respuestas truncadas o JSON inválido), y se
+    // piden una por una (no en paralelo): la cuenta gratuita de Groq tiene
+    // un límite de tokens por minuto y 7 llamadas simultáneas lo revientan.
     const pares = [];
     for (let i = 0; i < SIMULACRO_PLAN.length; i += 2) {
       pares.push(SIMULACRO_PLAN.slice(i, i + 2));
     }
 
-    Promise.all(pares.map((p) => generarLoteSimulacro(p, perfilId)))
-      .then((lotes) => {
-        const todas = [];
-        lotes.forEach((l) => {
-          if (Array.isArray(l)) todas.push(...l);
-        });
-        if (todas.length === 0) throw new Error("No se generaron preguntas.");
-        setPreguntas(todas);
-        setRespuestas(todas.map(() => null));
-        setIndexActual(0);
-        setStatus("active");
-        countdown.reset(SIMULACRO_TOTAL_SECS);
-        countdown.start();
-      })
-      .catch((err) => {
-        setStatus("error");
-        setLoadError("No se pudo generar el simulacro. " + (err?.message || "Intenta de nuevo."));
+    try {
+      const todas = [];
+      for (const p of pares) {
+        const lote = await generarLoteSimulacro(p, perfilId);
+        if (Array.isArray(lote)) todas.push(...lote);
+      }
+      if (todas.length === 0) throw new Error("No se generaron preguntas.");
+      setSesion({
+        preguntas: todas,
+        respuestas: todas.map(() => null),
+        indexActual: 0,
+        finalizaEn: Date.now() + SIMULACRO_TOTAL_SECS * 1000,
+        finalizado: false
       });
+      setLoading(false);
+    } catch (err) {
+      setLoading(false);
+      setLoadError("No se pudo generar el simulacro. " + (err?.message || "Intenta de nuevo."));
+    }
+  }
+
+  function generarNuevo() {
+    limpiar();
+    setLoading(false);
+    setLoadError(null);
   }
 
   function finalizar() {
-    preguntas.forEach((p, i) => {
-      const area = AREAS.find((a) => a.name === p.area);
-      if (area) registrar(area.id, respuestas[i] === p.respuesta_correcta);
+    setSesion((prev) => {
+      if (!prev || prev.finalizado) return prev;
+      prev.preguntas.forEach((p, i) => {
+        const area = AREAS.find((a) => a.name === p.area);
+        if (area) registrar(area.id, prev.respuestas[i] === p.respuesta_correcta);
+      });
+      return { ...prev, finalizado: true };
     });
-    setStatus("finished");
-    countdown.stop();
   }
 
   // Termina automáticamente cuando el tiempo llega a 0.
   useEffect(() => {
-    if (status === "active" && countdown.running && countdown.seconds === 0) {
+    if (sesion && !sesion.finalizado && sesion.finalizaEn && segundosRestantes === 0) {
       finalizar();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown.seconds]);
+  }, [segundosRestantes]);
 
   function confirmarFinalizar() {
-    const sinResponder = respuestas.filter((r) => r === null).length;
+    const sinResponder = sesion.respuestas.filter((r) => r === null).length;
     if (sinResponder > 0) {
       const ok = window.confirm(
         "Tienes " + sinResponder + " pregunta(s) sin responder. ¿Finalizar de todas formas?"
@@ -76,7 +86,14 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
   }
 
   function seleccionar(i) {
-    setRespuestas((prev) => prev.map((r, idx) => (idx === indexActual ? i : r)));
+    setSesion((prev) => ({
+      ...prev,
+      respuestas: prev.respuestas.map((r, idx) => (idx === prev.indexActual ? i : r))
+    }));
+  }
+
+  function irA(indice) {
+    setSesion((prev) => ({ ...prev, indexActual: indice }));
   }
 
   return (
@@ -86,14 +103,14 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
         Simulacro mini
       </p>
 
-      {status === "idle" && (
+      {!sesion && !loading && !loadError && (
         <div className="panel">
           <h2>Antes de empezar</h2>
           <p style={{ fontSize: "13.5px", color: "var(--muted)" }}>
             21 preguntas repartidas entre las 14 áreas del temario (más peso para las áreas grandes:
             Bacteriología, Micología, Virología, Inmunología, Hematología, Banco de Sangre y Bioquímica). 25
             minutos. No verás si acertaste hasta terminar, igual que en el examen real. Mezcla de preguntas
-            estándar y estilo Kevin.
+            estándar y estilo Kevin. Si sales de esta pantalla, tu progreso queda guardado.
           </p>
           <div className="btn-row">
             <button className="btn btn-primary" onClick={iniciar}>
@@ -103,7 +120,7 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
         </div>
       )}
 
-      {status === "loading" && (
+      {!sesion && loading && (
         <div className="panel">
           <div className="loading-line">
             <span className="spinner" /> Generando 21 preguntas del simulacro…
@@ -111,7 +128,7 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
         </div>
       )}
 
-      {status === "error" && (
+      {!sesion && loadError && (
         <div className="panel">
           <div className="error-box">{loadError}</div>
           <div className="btn-row">
@@ -122,26 +139,32 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
         </div>
       )}
 
-      {status === "active" &&
+      {sesion &&
+        !sesion.finalizado &&
         (() => {
-          const p = preguntas[indexActual];
+          const p = sesion.preguntas[sesion.indexActual];
           return (
             <div className="panel">
               <div className="q-head">
                 <span className="tag">
-                  Pregunta {indexActual + 1} de {preguntas.length}
+                  Pregunta {sesion.indexActual + 1} de {sesion.preguntas.length}
                 </span>
-                <Dial seconds={countdown.seconds} totalSeconds={SIMULACRO_TOTAL_SECS} color="var(--agar)" />
+                <Dial seconds={segundosRestantes} totalSeconds={SIMULACRO_TOTAL_SECS} color="var(--agar)" />
               </div>
-              <span className="tag" style={{ marginBottom: 8, display: "inline-block" }}>
-                {p.area}
-              </span>
+              <div className="btn-row" style={{ marginBottom: 8 }}>
+                <span className="tag" style={{ display: "inline-block" }}>
+                  {p.area}
+                </span>
+                <button className="btn btn-ghost btn-sm" onClick={generarNuevo}>
+                  Generar nuevo
+                </button>
+              </div>
               <p className="q-text">{p.pregunta}</p>
               <div className="opciones">
                 {p.opciones.map((op, i) => (
                   <button
                     key={i}
-                    className={"opcion" + (respuestas[indexActual] === i ? " selected" : "")}
+                    className={"opcion" + (sesion.respuestas[sesion.indexActual] === i ? " selected" : "")}
                     onClick={() => seleccionar(i)}
                   >
                     <span className="opcion-letra">{LETRAS[i]}</span>
@@ -151,15 +174,15 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
               </div>
 
               <div className="nav-dots">
-                {preguntas.map((_, i) => (
+                {sesion.preguntas.map((_, i) => (
                   <button
                     key={i}
                     className={
                       "dot" +
-                      (respuestas[i] !== null ? " answered" : "") +
-                      (i === indexActual ? " current" : "")
+                      (sesion.respuestas[i] !== null ? " answered" : "") +
+                      (i === sesion.indexActual ? " current" : "")
                     }
-                    onClick={() => setIndexActual(i)}
+                    onClick={() => irA(i)}
                   >
                     {i + 1}
                   </button>
@@ -169,15 +192,15 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
               <div className="btn-row">
                 <button
                   className="btn btn-ghost"
-                  disabled={indexActual === 0}
-                  onClick={() => setIndexActual((i) => Math.max(0, i - 1))}
+                  disabled={sesion.indexActual === 0}
+                  onClick={() => irA(Math.max(0, sesion.indexActual - 1))}
                 >
                   &larr; Anterior
                 </button>
-                {indexActual < preguntas.length - 1 && (
+                {sesion.indexActual < sesion.preguntas.length - 1 && (
                   <button
                     className="btn btn-primary"
-                    onClick={() => setIndexActual((i) => Math.min(preguntas.length - 1, i + 1))}
+                    onClick={() => irA(Math.min(sesion.preguntas.length - 1, sesion.indexActual + 1))}
                   >
                     Siguiente &rarr;
                   </button>
@@ -190,8 +213,10 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
           );
         })()}
 
-      {status === "finished" &&
+      {sesion &&
+        sesion.finalizado &&
         (() => {
+          const { preguntas, respuestas } = sesion;
           const correctas = preguntas.filter((p, i) => respuestas[i] === p.respuesta_correcta).length;
           return (
             <>
@@ -212,7 +237,7 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
                   ))}
                 </div>
                 <div className="btn-row">
-                  <button className="btn btn-primary" onClick={iniciar}>
+                  <button className="btn btn-primary" onClick={generarNuevo}>
                     Generar otro simulacro
                   </button>
                 </div>
@@ -221,7 +246,6 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
               <div className="panel">
                 <h2>Revisión pregunta por pregunta</h2>
                 {preguntas.map((p, i) => {
-                  const ok = respuestas[i] === p.respuesta_correcta;
                   return (
                     <div className="oral-block" key={i}>
                       <div className="area-header">

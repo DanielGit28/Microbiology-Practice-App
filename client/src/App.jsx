@@ -71,7 +71,7 @@ export default function App() {
           seedPregunta={seedPregunta}
         />
       )}
-      {perfil && view === "oral" && <Oral onBack={irAHome} />}
+      {perfil && view === "oral" && <Oral onBack={irAHome} perfilId={perfil.id} />}
       {perfil && view === "favoritos" && (
         <Favoritos onBack={irAHome} favoritos={favoritos} onGenerarSimilares={generarSimilaresA} />
       )}

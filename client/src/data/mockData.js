@@ -1,5 +1,3 @@
-import { AREAS } from "./areas.js";
-
 // Banco de preguntas mock con contenido REAL de microbiología y química
 // clínica (no plantillas de relleno). Es un set pequeño a propósito: sirve
 // para probar el flujo completo de la app sin gastar API. Cuando conectes
@@ -462,11 +460,21 @@ export function mockSimulacroBatch(areasConConteo) {
 }
 
 // Nota: al ser un banco fijo (1 pregunta normal + 1 kevin por área), volver a
-// pedir "nueva pregunta" sin cambiar de área ni de Modo Kevin va a repetir la
-// misma pregunta — es esperado en este mock chiquito. Con la API real vas a
-// tener variedad infinita.
-export function mockPracticaQuestion(area, kevin) {
-  return wait(300 + Math.random() * 300).then(() => bankQuestion(area, kevin ? "kevin" : "normal"));
+// pedir "nuevo caso" sin cambiar de área ni de Modo Kevin va a repetir las
+// mismas preguntas — es esperado en este mock chiquito. Con la API real vas a
+// tener casos y variedad infinitos.
+export function mockCasoPractica(area, kevin) {
+  return wait(300 + Math.random() * 300).then(() => {
+    const dificultad = kevin ? "kevin" : "normal";
+    const base = bankQuestion(area, dificultad);
+    return {
+      caso:
+        "(mock) Caso de " +
+        area.name +
+        ": paciente con hallazgos compatibles con el escenario descrito a continuación en cada pregunta.",
+      preguntas: [0, 1, 2].map((i) => ({ ...base, pregunta: base.pregunta + (i > 0 ? " (variante " + (i + 1) + ")" : "") }))
+    };
+  });
 }
 
 export function mockExtendedExplanation(area, pregunta) {
@@ -484,18 +492,19 @@ export function mockExtendedExplanation(area, pregunta) {
   });
 }
 
-export function mockOralQuestions() {
+export function mockCasoOral(area) {
   return wait(400).then(() => {
-    const copia = [...AREAS];
-    const muestra = [];
-    for (let i = 0; i < 3; i++) {
-      const idx = Math.floor(Math.random() * copia.length);
-      muestra.push(copia.splice(idx, 1)[0]);
-    }
-    return muestra.map((a) => {
-      const oral = MOCK_BANK[a.id].oral;
-      return { area: a.name, pregunta: oral.pregunta, puntos_clave: oral.puntos_clave };
-    });
+    const oral = MOCK_BANK[area.id].oral;
+    return {
+      caso:
+        "(mock) Caso de " +
+        area.name +
+        ": paciente con hallazgos compatibles con el escenario que se integra en cada pregunta a continuación.",
+      preguntas: [0, 1, 2].map((i) => ({
+        pregunta: oral.pregunta + (i > 0 ? " (variante " + (i + 1) + ")" : ""),
+        puntos_clave: oral.puntos_clave
+      }))
+    };
   });
 }
 

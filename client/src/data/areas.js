@@ -124,4 +124,4 @@ export const SIMULACRO_PLAN = AREAS.map((area) => ({
 }));
 
 export const SIMULACRO_TOTAL_SECS = 25 * 60;
-export const ORAL_TOTAL_SECS = 10 * 60;
+export const ORAL_TOTAL_SECS = 30 * 60;

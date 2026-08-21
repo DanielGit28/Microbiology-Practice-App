@@ -62,7 +62,7 @@ app.post("/api/generate", async (req, res) => {
 // Se elige entre los dos del lado del cliente con PROVIDER en client/src/api/api.js,
 // sin tocar la lógica de Claude de arriba.
 app.post("/api/generate-groq", async (req, res) => {
-  const { system, user } = req.body || {};
+  const { system, user, maxTokens } = req.body || {};
 
   if (!user) {
     return res.status(400).json({ error: 'Falta el campo "user" en el body.' });
@@ -72,6 +72,12 @@ app.post("/api/generate-groq", async (req, res) => {
       .status(500)
       .json({ error: "Falta GROQ_API_KEY en el servidor. Revisa server/.env (copia .env.example)." });
   }
+
+  // La cuenta gratuita de Groq tiene un límite bajo de tokens por minuto
+  // (TPM) para este modelo. max_tokens reserva ese cupo de una vez, así que
+  // cada tipo de llamada pide solo lo que realmente necesita (el cliente lo
+  // indica en maxTokens); 2048 es el techo por defecto si no se especifica.
+  const tope = Number.isFinite(maxTokens) ? Math.min(Math.max(maxTokens, 256), 4096) : 2048;
 
   try {
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -83,6 +89,7 @@ app.post("/api/generate-groq", async (req, res) => {
       body: JSON.stringify({
         model: GROQ_MODEL,
         temperature: 0.8,
+        max_tokens: tope,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user }
@@ -93,7 +100,12 @@ app.post("/api/generate-groq", async (req, res) => {
     const data = await r.json();
 
     if (!r.ok) {
-      return res.status(r.status).json({ error: data?.error?.message || "Error de la API de Groq." });
+      const retryAfterHeader = r.headers.get("retry-after");
+      const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+      return res.status(r.status).json({
+        error: data?.error?.message || "Error de la API de Groq.",
+        retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null
+      });
     }
 
     const text = data.choices?.[0]?.message?.content || "";
@@ -250,7 +262,84 @@ app.post("/api/preguntas", async (req, res) => {
   }
 });
 
-// GET: lista las preguntas favoritas de un perfil, con su contenido completo.
+// Guarda un caso clínico completo (modo Práctica u Oral): el texto del caso
+// y sus EXACTAMENTE 3 preguntas asociadas, en una sola transacción. Así el
+// caso completo (no cada pregunta suelta) es la unidad que se favoritea.
+// Body: { areaId, modo, caso, dificultad?, perfilId?, preguntas: [{pregunta,
+// opciones, respuestaCorrecta, explicacion?, pista?, dificultad?}] }
+app.post("/api/casos", async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(500).json({ error: "Falta DATABASE_URL en el servidor. Revisa server/.env" });
+  }
+  const { areaId, modo, caso, dificultad, perfilId, preguntas } = req.body || {};
+
+  if (!areaId || !modo || !caso || !Array.isArray(preguntas) || preguntas.length === 0) {
+    return res
+      .status(400)
+      .json({ error: "Faltan areaId, modo, caso o preguntas (array no vacío) en el body." });
+  }
+  for (const q of preguntas) {
+    if (!q || !q.pregunta || !Array.isArray(q.opciones) || q.opciones.length !== 4) {
+      return res
+        .status(400)
+        .json({ error: "Cada elemento de preguntas necesita 'pregunta' y 'opciones' (array de 4)." });
+    }
+    if (typeof q.respuestaCorrecta !== "number" || q.respuestaCorrecta < 0 || q.respuestaCorrecta > 3) {
+      return res
+        .status(400)
+        .json({ error: "respuestaCorrecta debe ser un número entre 0 y 3 en cada pregunta." });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const casoRes = await client.query(
+      `INSERT INTO casos (area_id, modo, caso, dificultad, origen_perfil_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [areaId, modo, caso, dificultad || null, perfilId || null]
+    );
+    const casoId = casoRes.rows[0].id;
+
+    const preguntaIds = [];
+    for (const q of preguntas) {
+      const r = await client.query(
+        `INSERT INTO preguntas
+           (area_id, modo, pregunta, opciones, respuesta_correcta, explicacion, pista, dificultad, origen_perfil_id, caso_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id`,
+        [
+          areaId,
+          modo,
+          q.pregunta,
+          JSON.stringify(q.opciones),
+          q.respuestaCorrecta,
+          q.explicacion || null,
+          q.pista || null,
+          q.dificultad || null,
+          perfilId || null,
+          casoId
+        ]
+      );
+      preguntaIds.push(r.rows[0].id);
+    }
+
+    await client.query("COMMIT");
+    res.json({ id: casoId, preguntaIds });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    res.status(500).json({ error: err.message || "Error guardando el caso clínico." });
+  } finally {
+    client.release();
+  }
+});
+
+// GET: lista los favoritos de un perfil, con su contenido completo. Puede
+// haber dos tipos mezclados: "pregunta" (favoritos sueltos, típicamente del
+// Simulacro) y "caso" (un caso clínico completo con sus 3 preguntas
+// embebidas en "preguntas", típicamente de Práctica). Se combinan y ordenan
+// por fecha en JS porque agregar (json_agg) para el segundo tipo no
+// mezcla limpio con filas planas del primero en un solo UNION.
 app.get("/api/favoritos", async (req, res) => {
   if (!process.env.DATABASE_URL) {
     return res.status(500).json({ error: "Falta DATABASE_URL en el servidor. Revisa server/.env" });
@@ -260,36 +349,73 @@ app.get("/api/favoritos", async (req, res) => {
     return res.status(400).json({ error: "Falta perfilId en la consulta." });
   }
   try {
-    const { rows } = await pool.query(
-      `SELECT f.id AS favorito_id, p.id, p.area_id, p.modo, p.pregunta, p.opciones,
-              p.respuesta_correcta, p.explicacion, p.pista, p.dificultad, f.creado_en
-       FROM favoritos f
-       JOIN preguntas p ON p.id = f.pregunta_id
-       WHERE f.perfil_id = $1
-       ORDER BY f.creado_en DESC`,
-      [perfilId]
-    );
-    res.json(rows);
+    const [preguntasRes, casosRes] = await Promise.all([
+      pool.query(
+        `SELECT f.id AS favorito_id, p.id, p.area_id, p.modo, p.pregunta, p.opciones,
+                p.respuesta_correcta, p.explicacion, p.pista, p.dificultad, f.creado_en
+         FROM favoritos f
+         JOIN preguntas p ON p.id = f.pregunta_id
+         WHERE f.perfil_id = $1`,
+        [perfilId]
+      ),
+      pool.query(
+        `SELECT f.id AS favorito_id, c.id, c.area_id, c.modo, c.caso, c.dificultad, f.creado_en,
+                COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'id', p.id,
+                      'pregunta', p.pregunta,
+                      'opciones', p.opciones,
+                      'respuesta_correcta', p.respuesta_correcta,
+                      'explicacion', p.explicacion,
+                      'pista', p.pista,
+                      'dificultad', p.dificultad
+                    ) ORDER BY p.id
+                  ) FILTER (WHERE p.id IS NOT NULL),
+                  '[]'
+                ) AS preguntas
+         FROM favoritos f
+         JOIN casos c ON c.id = f.caso_id
+         LEFT JOIN preguntas p ON p.caso_id = c.id
+         WHERE f.perfil_id = $1
+         GROUP BY f.id, c.id, c.area_id, c.modo, c.caso, c.dificultad, f.creado_en`,
+        [perfilId]
+      )
+    ]);
+
+    const preguntas = preguntasRes.rows.map((r) => ({ tipo: "pregunta", ...r }));
+    const casos = casosRes.rows.map((r) => ({ tipo: "caso", ...r }));
+    const todos = [...preguntas, ...casos].sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en));
+    res.json(todos);
   } catch (err) {
     res.status(500).json({ error: err.message || "Error consultando los favoritos." });
   }
 });
 
-// POST: marca una pregunta como favorita. Body: { perfilId, preguntaId }. Idempotente.
+// POST: marca una pregunta O un caso como favorito. Body: { perfilId,
+// preguntaId } o { perfilId, casoId } — exactamente uno de los dos.
+// Idempotente.
 app.post("/api/favoritos", async (req, res) => {
   if (!process.env.DATABASE_URL) {
     return res.status(500).json({ error: "Falta DATABASE_URL en el servidor. Revisa server/.env" });
   }
-  const { perfilId, preguntaId } = req.body || {};
-  if (!perfilId || !preguntaId) {
-    return res.status(400).json({ error: "Faltan perfilId o preguntaId en el body." });
+  const { perfilId, preguntaId, casoId } = req.body || {};
+  if (!perfilId || (!preguntaId && !casoId)) {
+    return res.status(400).json({ error: "Faltan perfilId y (preguntaId o casoId) en el body." });
+  }
+  if (preguntaId && casoId) {
+    return res.status(400).json({ error: "Envía solo preguntaId o casoId, no ambos." });
   }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO favoritos (perfil_id, pregunta_id) VALUES ($1, $2)
-       ON CONFLICT (perfil_id, pregunta_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id
-       RETURNING id`,
-      [perfilId, preguntaId]
+      preguntaId
+        ? `INSERT INTO favoritos (perfil_id, pregunta_id) VALUES ($1, $2)
+           ON CONFLICT (perfil_id, pregunta_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id
+           RETURNING id`
+        : `INSERT INTO favoritos (perfil_id, caso_id) VALUES ($1, $2)
+           ON CONFLICT (perfil_id, caso_id) WHERE caso_id IS NOT NULL DO UPDATE SET perfil_id = EXCLUDED.perfil_id
+           RETURNING id`,
+      [perfilId, preguntaId || casoId]
     );
     res.json({ ok: true, id: rows[0].id });
   } catch (err) {

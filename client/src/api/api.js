@@ -1,8 +1,8 @@
 import {
   mockSimulacroBatch,
-  mockPracticaQuestion,
+  mockCasoPractica,
   mockExtendedExplanation,
-  mockOralQuestions,
+  mockCasoOral,
   mockEvaluation
 } from "../data/mockData.js";
 import { AREAS } from "../data/areas.js";
@@ -23,6 +23,15 @@ const SYS_GENERADOR =
   "con precisión técnica de nivel universitario avanzado. Responde ÚNICAMENTE con JSON válido: sin texto antes " +
   "ni después, sin backticks, sin comentarios.";
 
+const SIN_SPOILER_CASO =
+  "REGLA CRÍTICA sobre el texto del caso: el 'caso' debe presentar SOLO los hallazgos crudos que llevan a la " +
+  "conclusión (antecedentes, síntomas, hallazgos de tinción, morfología colonial, pruebas fenotípicas básicas " +
+  "como oxidasa/catalasa/hemólisis, valores de laboratorio, etc.), pero NUNCA debe nombrar el microorganismo " +
+  "identificado, el diagnóstico definitivo, ni el resultado de pruebas confirmatorias/de identificación final " +
+  "(Vitek, MALDI-TOF, PCR, cultivo con resultado de especie, serología con diagnóstico, etc.) si eso revela la " +
+  "respuesta a alguna de las 3 preguntas. El caso debe detenerse justo antes de la conclusión: el estudiante " +
+  "llega a esa conclusión respondiendo las preguntas, no leyéndola en el caso.";
+
 const ESTILO_KEVIN =
   "Aplica un estilo exigente e integrativo, conocido entre los estudiantes como preguntas 'tipo Kevin': alterna " +
   "entre (a) casos clínicos breves que obligan a integrar hallazgos de 2 o más áreas del laboratorio para llegar " +
@@ -31,15 +40,37 @@ const ESTILO_KEVIN =
   "literal del temario si el razonamiento microbiológico o clínico sigue siendo correcto y defendible. No " +
   "inventes organismos ni datos falsos.";
 
-async function callBackend(system, user) {
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// A veces el mensaje de Groq trae el tiempo de espera en el texto en vez de
+// (o además de) un header, p. ej.: "Please try again in 9.6s."
+function segundosDeEspera(mensaje) {
+  const m = /in (\d+(?:\.\d+)?)s/.exec(mensaje || "");
+  return m ? parseFloat(m[1]) : null;
+}
+
+// maxTokens solo aplica al proveedor Groq (ver /api/generate-groq): la
+// cuenta gratuita tiene un límite bajo de tokens por minuto (TPM), así que
+// cada tipo de llamada pide nada más lo que necesita en vez de un tope fijo
+// alto. Si aun así se topa con el límite (429), se espera el tiempo que
+// indica Groq y se reintenta un par de veces antes de rendirse, en vez de
+// romperle el flujo al usuario por algo que se resuelve solo en segundos.
+async function callBackend(system, user, maxTokens, intentosRestantes = 2) {
   const endpoint = PROVIDER === "groq" ? "/api/generate-groq" : "/api/generate";
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, user })
+    body: JSON.stringify({ system, user, maxTokens })
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (res.status === 429 && intentosRestantes > 0) {
+      const espera = body.retryAfterSeconds ?? segundosDeEspera(body.error) ?? 5;
+      await wait(Math.ceil(espera * 1000) + 500);
+      return callBackend(system, user, maxTokens, intentosRestantes - 1);
+    }
     throw new Error(body.error || "Error del servidor (" + res.status + ")");
   }
   const data = await res.json();
@@ -66,6 +97,23 @@ async function guardarPregunta(payload) {
   }
 }
 
+// Guarda un caso clínico completo (caso + sus 3 preguntas) de una sola vez,
+// para que el caso completo — no cada pregunta suelta — sea la unidad que
+// se favoritea. Igual que guardarPregunta, no debe romper el flujo si falla.
+async function guardarCaso(payload) {
+  try {
+    const res = await fetch("/api/casos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) return { id: null, preguntaIds: [] };
+    return res.json();
+  } catch {
+    return { id: null, preguntaIds: [] };
+  }
+}
+
 export async function listarFavoritos(perfilId) {
   const res = await fetch("/api/favoritos?perfilId=" + perfilId);
   if (!res.ok) throw new Error("No se pudieron cargar los favoritos (" + res.status + ")");
@@ -77,6 +125,16 @@ export async function favoritoAgregar(perfilId, preguntaId) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ perfilId, preguntaId })
+  });
+  if (!res.ok) throw new Error("No se pudo guardar el favorito (" + res.status + ")");
+  return res.json();
+}
+
+export async function favoritoCasoAgregar(perfilId, casoId) {
+  const res = await fetch("/api/favoritos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ perfilId, casoId })
   });
   if (!res.ok) throw new Error("No se pudo guardar el favorito (" + res.status + ")");
   return res.json();
@@ -126,6 +184,23 @@ function parseJSON(text) {
   }
 
   return JSON.parse(end !== -1 ? clean.slice(first, end + 1) : clean);
+}
+
+// Los casos clínicos (caso + 3 preguntas) generan respuestas largas, y a
+// veces el modelo corta el JSON a mitad de una cadena (respuesta truncada) —
+// más aún en áreas con casos verbosos (p. ej. Bioquímica con un panel de
+// laboratorio largo). Si el parseo falla, se reintenta con el doble de
+// tokens permitidos (reintentar con el mismo tope solo repetiría el mismo
+// corte) antes de rendirse.
+async function callBackendJSON(system, user, maxTokens) {
+  const text = await callBackend(system, user, maxTokens);
+  try {
+    return parseJSON(text);
+  } catch {
+    const maxTokensReintento = maxTokens ? Math.min(maxTokens * 2, 4096) : 4096;
+    const retryText = await callBackend(system, user, maxTokensReintento);
+    return parseJSON(retryText);
+  }
 }
 
 export async function generarLoteSimulacro(areasConConteo, perfilId) {
@@ -179,34 +254,43 @@ async function generarLoteSimulacroBase(areasConConteo) {
     '"respuesta_correcta" es el índice (0 a 3) de la opción correcta dentro de "opciones". "explicacion" debe ' +
     "tener 2-3 frases.";
 
-  const text = await callBackend(SYS_GENERADOR, user);
-  const r = parseJSON(text);
+  const r = await callBackendJSON(SYS_GENERADOR, user, 1800);
   return Array.isArray(r) ? r : [r];
 }
 
-export async function generarPreguntaPractica(area, kevin, perfilId, seedPregunta) {
-  const q = await generarPreguntaPracticaBase(area, kevin, seedPregunta);
-  const id = await guardarPregunta({
+// Modo Práctica: siempre en formato de caso clínico/laboratorial — un caso
+// breve por área, con 3 preguntas de selección única asociadas al mismo
+// caso. El caso completo (no cada pregunta suelta) se guarda como una sola
+// unidad, para poder favoritearlo como tal.
+export async function generarCasoPractica(area, kevin, perfilId, seedPregunta) {
+  const caso = await generarCasoPracticaBase(area, kevin, seedPregunta);
+  const dificultad = kevin ? "kevin" : "normal";
+  const { id, preguntaIds } = await guardarCaso({
     areaId: area.id,
     modo: "practica",
-    pregunta: q.pregunta,
-    opciones: q.opciones,
-    respuestaCorrecta: q.respuesta_correcta,
-    explicacion: q.explicacion,
-    pista: q.pista || null,
-    dificultad: q.dificultad,
+    caso: caso.caso,
+    dificultad,
     perfilId,
-    seedPreguntaId: seedPregunta ? seedPregunta.id : null
+    preguntas: caso.preguntas.map((q) => ({
+      pregunta: q.pregunta,
+      opciones: q.opciones,
+      respuestaCorrecta: q.respuesta_correcta,
+      explicacion: q.explicacion,
+      pista: q.pista || null,
+      dificultad: q.dificultad
+    }))
   });
-  return { ...q, id };
+  const preguntas = caso.preguntas.map((q, i) => ({ ...q, id: preguntaIds[i] || null }));
+  return { id, caso: caso.caso, dificultad, preguntas };
 }
 
-async function generarPreguntaPracticaBase(area, kevin, seedPregunta) {
-  if (MOCK_MODE) return mockPracticaQuestion(area, kevin);
+async function generarCasoPracticaBase(area, kevin, seedPregunta) {
+  if (MOCK_MODE) return mockCasoPractica(area, kevin);
 
   const referenciaSeed = seedPregunta
     ? "\n\nEsta pregunta de referencia es SOLO para calibrar estilo y nivel de dificultad — NO la repitas ni la " +
-      "parafrasees. Genera una pregunta DIFERENTE, sobre otro organismo, concepto o matiz del mismo tema:\n" +
+      "parafrasees, y NO construyas el caso alrededor de ella. Genera un caso y preguntas DIFERENTES, sobre otro " +
+      "organismo, concepto o matiz del mismo tema:\n" +
       'Pregunta de referencia: "' +
       seedPregunta.pregunta +
       '"\nOpciones: ' +
@@ -221,33 +305,41 @@ async function generarPreguntaPracticaBase(area, kevin, seedPregunta) {
     area.name +
     '". Contexto de temas: ' +
     area.temas +
-    ". Genera UNA pregunta de selección única (4 opciones, una sola correcta) de esta área." +
+    ".\n\nGenera UN caso clínico o de laboratorio breve y realista (4-8 líneas) de esta área, con los datos " +
+    "relevantes que apliquen (antecedentes, síntomas, hallazgos de tinción, cultivo, serología, hemograma, " +
+    "imágenes, etc.), seguido de EXACTAMENTE 3 preguntas de selección única (4 opciones cada una, una sola " +
+    "correcta) que solo puedan responderse integrando la información del caso. Cada pregunta debe evaluar un " +
+    "aspecto distinto (por ejemplo: identificación del agente o diagnóstico, interpretación de un hallazgo o " +
+    "mecanismo, y siguiente paso diagnóstico o terapéutico).\n\n" +
+    SIN_SPOILER_CASO +
     (kevin
-      ? " " + ESTILO_KEVIN + " Esta pregunta debe ser 'kevin'."
-      : " Nivel estándar de examen de grado, bien fundamentada, con distractores plausibles pero justos " +
-        "('dificultad':'normal').") +
+      ? " " + ESTILO_KEVIN + " Las 3 preguntas deben ser 'kevin'."
+      : " Nivel estándar de examen de grado, bien fundamentado, con distractores plausibles pero justos " +
+        "('dificultad':'normal') para las 3 preguntas.") +
     referenciaSeed +
     "\n\nDevuelve SOLO este JSON:\n" +
-    '{"pregunta":"...","opciones":["...","...","...","..."],"respuesta_correcta":0,"pista":"...",' +
-    '"explicacion":"...","dificultad":"' +
+    '{"caso":"...","preguntas":[{"pregunta":"...","opciones":["...","...","...","..."],"respuesta_correcta":0,' +
+    '"pista":"...","explicacion":"...","dificultad":"' +
     (kevin ? "kevin" : "normal") +
-    '"}\n"pista" debe orientar sin revelar la respuesta directamente. "explicacion" debe tener 2-4 frases.';
+    '"}]}\n"preguntas" debe tener EXACTAMENTE 3 elementos. "pista" debe orientar sin revelar la respuesta ' +
+    'directamente. "explicacion" debe tener 2-4 frases.';
 
-  const text = await callBackend(SYS_GENERADOR, user);
-  const r = parseJSON(text);
+  const r = await callBackendJSON(SYS_GENERADOR, user, 2200);
   return Array.isArray(r) ? r[0] : r;
 }
 
-export async function generarExplicacionExtendida(area, pregunta) {
+export async function generarExplicacionExtendida(area, pregunta, caso) {
   if (MOCK_MODE) return mockExtendedExplanation(area, pregunta);
 
   const sys =
     "Eres un profesor experto en microbiología y química clínica, preparando a una estudiante para su examen " +
     "de grado (Costa Rica). Explicas conceptos con claridad, sin relleno, en español.";
+  const contextoCaso = caso ? '\nCaso clínico asociado: "' + caso + '"' : "";
   const user =
     "Área: " +
     area.name +
-    '. La estudiante falló o pidió ayuda con esta pregunta: "' +
+    contextoCaso +
+    '\nLa estudiante falló o pidió ayuda con esta pregunta: "' +
     pregunta.pregunta +
     '" (respuesta correcta: "' +
     pregunta.opciones[pregunta.respuesta_correcta] +
@@ -255,34 +347,36 @@ export async function generarExplicacionExtendida(area, pregunta) {
     "respuesta): por qué es correcta, y qué principio general hay que dominar para no volver a fallar preguntas " +
     "similares. Texto plano, sin JSON, sin markdown.";
 
-  return callBackend(sys, user);
+  return callBackend(sys, user, 500);
 }
 
-export async function generarPreguntasOrales() {
-  if (MOCK_MODE) return mockOralQuestions();
+// Modo Oral: siempre en formato de caso clínico/laboratorial de UN área
+// (elegida por la estudiante, como en Práctica) — un caso breve, con 3
+// preguntas abiertas asociadas al mismo caso, tal como lo pediría el
+// tribunal ante un caso presentado.
+export async function generarCasoOral(area) {
+  if (MOCK_MODE) return mockCasoOral(area);
 
-  // Muestra 3 áreas al azar del lado del cliente y le pide al modelo una pregunta por cada una.
-  const copia = [...AREAS];
-  const muestra = [];
-  for (let i = 0; i < 3; i++) {
-    const idx = Math.floor(Math.random() * copia.length);
-    muestra.push(copia.splice(idx, 1)[0]);
-  }
-  const listado = muestra.map((a) => '- "' + a.name + '" (temas: ' + a.temas + ")").join("\n");
   const user =
-    "Genera 3 preguntas de examen ORAL (abiertas, sin opciones) para las Pruebas de Grado, una por cada área:\n" +
-    listado +
-    "\nDeben exigir integración conceptual y capacidad de argumentar en voz alta, no solo memorizar un dato." +
-    "\n\nDevuelve SOLO un array JSON:\n" +
-    '[{"area":"...","pregunta":"...","puntos_clave":["...","...","..."]}]\n' +
-    '"puntos_clave" son 3-5 elementos que una buena respuesta debería mencionar.';
+    'Área: "' +
+    area.name +
+    '". Contexto de temas: ' +
+    area.temas +
+    ".\n\nGenera UN caso clínico o de laboratorio breve y realista (4-8 líneas) de esta área para la Prueba de " +
+    "Grado ORAL, seguido de EXACTAMENTE 3 preguntas abiertas (sin opciones) que la estudiante debe responder en " +
+    "voz alta ante el tribunal, integrando la información del caso. Deben exigir integración conceptual y " +
+    "capacidad de argumentar, no solo memorizar un dato aislado.\n\n" +
+    SIN_SPOILER_CASO +
+    "\n\nDevuelve SOLO este JSON:\n" +
+    '{"caso":"...","preguntas":[{"pregunta":"...","puntos_clave":["...","...","..."]}]}\n' +
+    '"preguntas" debe tener EXACTAMENTE 3 elementos. "puntos_clave" son 3-5 elementos que una buena respuesta ' +
+    "debería mencionar.";
 
-  const text = await callBackend(SYS_GENERADOR, user);
-  const r = parseJSON(text);
-  return Array.isArray(r) ? r : [r];
+  const r = await callBackendJSON(SYS_GENERADOR, user, 1700);
+  return Array.isArray(r) ? r[0] : r;
 }
 
-export async function evaluarRespuestaOral(pregunta, respuestaEstudiante) {
+export async function evaluarRespuestaOral(pregunta, respuestaEstudiante, caso) {
   if (MOCK_MODE) return mockEvaluation(pregunta, respuestaEstudiante);
 
   const sys =
@@ -290,7 +384,9 @@ export async function evaluarRespuestaOral(pregunta, respuestaEstudiante) {
     "Clínica (Costa Rica). Evalúas con los criterios oficiales: dominio del contenido, claridad y coherencia en " +
     "la exposición, capacidad de análisis y argumentación, uso adecuado del vocabulario técnico, y actitud " +
     "profesional. Eres exigente pero constructivo. Responde ÚNICAMENTE con JSON válido, sin backticks.";
+  const contextoCaso = caso ? 'Caso clínico presentado: "' + caso + '"\n\n' : "";
   const user =
+    contextoCaso +
     'Pregunta: "' +
     pregunta.pregunta +
     '"\nPuntos clave esperados: ' +
@@ -300,6 +396,5 @@ export async function evaluarRespuestaOral(pregunta, respuestaEstudiante) {
     '"\n\nDevuelve SOLO este JSON:\n{"nota_estimada":"7/10","fortalezas":["...","..."],' +
     '"areas_mejora":["...","..."],"comentario_general":"..."}';
 
-  const text = await callBackend(sys, user);
-  return parseJSON(text);
+  return callBackendJSON(sys, user, 700);
 }
