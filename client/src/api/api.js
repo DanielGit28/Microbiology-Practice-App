@@ -45,11 +45,22 @@ function wait(ms) {
 }
 
 // A veces el mensaje de Groq trae el tiempo de espera en el texto en vez de
-// (o además de) un header, p. ej.: "Please try again in 9.6s."
+// (o además de) un header, p. ej. "Please try again in 9.6s" (límite por
+// minuto) o "Please try again in 57m4.03s" (límite por día — los minutos
+// son opcionales en el mensaje, hay que contemplarlos o se subestima la
+// espera real por mucho).
 function segundosDeEspera(mensaje) {
-  const m = /in (\d+(?:\.\d+)?)s/.exec(mensaje || "");
-  return m ? parseFloat(m[1]) : null;
+  const m = /in (?:(\d+)m)?(\d+(?:\.\d+)?)s/.exec(mensaje || "");
+  if (!m) return null;
+  const minutos = m[1] ? parseInt(m[1], 10) : 0;
+  return minutos * 60 + parseFloat(m[2]);
 }
+
+// Si Groq (o nuestro propio servidor, después de agotar su reintento
+// interno con el modelo de respaldo) pide esperar más que esto, no tiene
+// sentido colgar la pestaña — se avisa con un error claro en vez de
+// congelar la UI por minutos u horas.
+const ESPERA_MAXIMA_CLIENTE_SEGUNDOS = 20;
 
 // maxTokens solo aplica al proveedor Groq (ver /api/generate-groq): la
 // cuenta gratuita tiene un límite bajo de tokens por minuto (TPM), así que
@@ -66,10 +77,23 @@ async function callBackend(system, user, maxTokens, intentosRestantes = 2) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    if (res.status === 429 && intentosRestantes > 0) {
+    if (res.status === 429) {
       const espera = body.retryAfterSeconds ?? segundosDeEspera(body.error) ?? 5;
-      await wait(Math.ceil(espera * 1000) + 500);
-      return callBackend(system, user, maxTokens, intentosRestantes - 1);
+      // El servidor ya intenta un modelo de respaldo antes de llegar aquí,
+      // así que si de todos modos pide esperar mucho (p. ej. un cupo diario
+      // agotado, minutos u horas), no tiene sentido colgar la pestaña
+      // esperando — se avisa con un mensaje claro en vez de congelar la UI.
+      if (espera > ESPERA_MAXIMA_CLIENTE_SEGUNDOS) {
+        throw new Error(
+          "Groq está saturado ahora mismo (hay que esperar " +
+            Math.ceil(espera / 60) +
+            " min). Intenta de nuevo en un rato."
+        );
+      }
+      if (intentosRestantes > 0) {
+        await wait(Math.ceil(espera * 1000) + 500);
+        return callBackend(system, user, maxTokens, intentosRestantes - 1);
+      }
     }
     throw new Error(body.error || "Error del servidor (" + res.status + ")");
   }
@@ -117,6 +141,14 @@ async function guardarCaso(payload) {
 export async function listarFavoritos(perfilId) {
   const res = await fetch("/api/favoritos?perfilId=" + perfilId);
   if (!res.ok) throw new Error("No se pudieron cargar los favoritos (" + res.status + ")");
+  return res.json();
+}
+
+// Preguntas y casos que el perfil ya respondió (Práctica y Simulacro), más
+// recientes primero. Ver GET /api/historial en server/index.js.
+export async function listarHistorial(perfilId) {
+  const res = await fetch("/api/historial?perfilId=" + perfilId);
+  if (!res.ok) throw new Error("No se pudo cargar el historial (" + res.status + ")");
   return res.json();
 }
 
@@ -354,7 +386,25 @@ export async function generarExplicacionExtendida(area, pregunta, caso) {
 // (elegida por la estudiante, como en Práctica) — un caso breve, con 3
 // preguntas abiertas asociadas al mismo caso, tal como lo pediría el
 // tribunal ante un caso presentado.
-export async function generarCasoOral(area) {
+// Se guarda el caso + sus 3 preguntas (sin respuestas: Oral se evalúa con
+// IA al momento y no se registra la evaluación), solo para poder repasar
+// después en el Historial qué preguntas salieron. Igual que en Práctica,
+// si el guardado falla no debe romper el flujo — el caso sigue siendo
+// usable, solo con id nulo (no aparecerá en el Historial).
+export async function generarCasoOral(area, perfilId) {
+  const caso = await generarCasoOralBase(area);
+  const { id, preguntaIds } = await guardarCaso({
+    areaId: area.id,
+    modo: "oral",
+    caso: caso.caso,
+    perfilId,
+    preguntas: caso.preguntas.map((q) => ({ pregunta: q.pregunta, puntosClave: q.puntos_clave }))
+  });
+  const preguntas = caso.preguntas.map((q, i) => ({ ...q, id: preguntaIds[i] || null }));
+  return { id, caso: caso.caso, preguntas };
+}
+
+async function generarCasoOralBase(area) {
   if (MOCK_MODE) return mockCasoOral(area);
 
   const user =

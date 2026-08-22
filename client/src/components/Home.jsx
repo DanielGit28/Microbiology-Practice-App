@@ -55,6 +55,18 @@ export default function Home({ onNavigate, progreso, perfilNombre, onCambiarPerf
             Vuelve a las preguntas que guardaste y genera preguntas nuevas parecidas a una de ellas.
           </p>
         </button>
+
+        <button className="card" onClick={() => onNavigate("historial")}>
+          <div className="card-top">
+            <span className="cap agar" />
+            <span className="card-id">MUESTRA-05</span>
+          </div>
+          <h3 className="card-title">Historial</h3>
+          <p className="card-desc">
+            Repasa lo que ya respondiste en Práctica y el Simulacro, y los casos que salieron en Oral, filtrando
+            por área.
+          </p>
+        </button>
       </div>
       <ProgresoPanel progreso={progreso} />
     </>

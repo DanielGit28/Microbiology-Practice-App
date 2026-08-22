@@ -4,6 +4,7 @@ import Simulacro from "./components/Simulacro.jsx";
 import Practica from "./components/Practica.jsx";
 import Oral from "./components/Oral.jsx";
 import Favoritos from "./components/Favoritos.jsx";
+import Historial from "./components/Historial.jsx";
 import PerfilSelector from "./components/PerfilSelector.jsx";
 import { useProgreso } from "./hooks/useProgreso.js";
 import { useFavoritos } from "./hooks/useFavoritos.js";
@@ -75,6 +76,7 @@ export default function App() {
       {perfil && view === "favoritos" && (
         <Favoritos onBack={irAHome} favoritos={favoritos} onGenerarSimilares={generarSimilaresA} />
       )}
+      {perfil && view === "historial" && <Historial onBack={irAHome} perfilId={perfil.id} />}
     </div>
   );
 }

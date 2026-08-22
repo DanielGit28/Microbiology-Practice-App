@@ -39,7 +39,7 @@ export default function Oral({ onBack, perfilId }) {
     setErrorPrimero(null);
     const nuevasAreas = areasAlAzar(TOTAL_CASOS);
 
-    generarCasoOral(nuevasAreas[0])
+    generarCasoOral(nuevasAreas[0], perfilId)
       .then((caso) => {
         setSesion({
           areas: nuevasAreas,
@@ -66,12 +66,12 @@ export default function Oral({ onBack, perfilId }) {
   }
 
   function generarSiguienteCaso() {
-    if (!sesion) return;
+    if (!sesion || segundosRestantes === 0) return;
     const siguienteIndice = sesion.casos.length;
     if (siguienteIndice >= sesion.areas.length) return;
     setGenerandoSiguiente(true);
     setErrorSiguiente(null);
-    generarCasoOral(sesion.areas[siguienteIndice])
+    generarCasoOral(sesion.areas[siguienteIndice], perfilId)
       .then((caso) => {
         setSesion((prev) => ({
           ...prev,
@@ -88,6 +88,7 @@ export default function Oral({ onBack, perfilId }) {
   }
 
   function actualizarTexto(ci, qi, valor) {
+    if (segundosRestantes === 0) return;
     setSesion((prev) => ({
       ...prev,
       respuestasTexto: prev.respuestasTexto.map((preguntas, i) =>
@@ -97,6 +98,7 @@ export default function Oral({ onBack, perfilId }) {
   }
 
   function evaluar(ci, qi) {
+    if (segundosRestantes === 0) return;
     const key = ci + "-" + qi;
     setEvaluando((prev) => new Set(prev).add(key));
     const caso = sesion.casos[ci];
@@ -132,6 +134,7 @@ export default function Oral({ onBack, perfilId }) {
   }
 
   const faltanCasos = !!sesion && sesion.casos.length < TOTAL_CASOS;
+  const tiempoAgotado = !!sesion && segundosRestantes === 0;
 
   return (
     <>
@@ -195,6 +198,15 @@ export default function Oral({ onBack, perfilId }) {
             <Dial seconds={segundosRestantes} totalSeconds={ORAL_TOTAL_SECS} color="var(--culture)" />
           </div>
 
+          {tiempoAgotado && (
+            <div className="panel">
+              <div className="error-box">
+                Se acabaron los 30 minutos. Ya no puedes seguir respondiendo ni generar más casos en esta sesión —
+                dale "Generar nuevo" para empezar otra.
+              </div>
+            </div>
+          )}
+
           {sesion.casos.map((caso, ci) => (
             <div key={ci}>
               <div className="panel">
@@ -223,11 +235,12 @@ export default function Oral({ onBack, perfilId }) {
                       placeholder="Escribe aquí lo que responderías en voz alta…"
                       value={sesion.respuestasTexto[ci]?.[qi] || ""}
                       onChange={(e) => actualizarTexto(ci, qi, e.target.value)}
+                      disabled={tiempoAgotado}
                     />
                     <div className="btn-row">
                       <button
                         className="btn btn-primary btn-sm"
-                        disabled={cargandoEval}
+                        disabled={cargandoEval || tiempoAgotado}
                         onClick={() => evaluar(ci, qi)}
                       >
                         {cargandoEval ? "Evaluando…" : "Evaluar mi respuesta"}
@@ -269,7 +282,7 @@ export default function Oral({ onBack, perfilId }) {
             </div>
           ))}
 
-          {faltanCasos && (
+          {faltanCasos && !tiempoAgotado && (
             <div className="panel">
               {errorSiguiente && <div className="error-box">{errorSiguiente}</div>}
               <div className="btn-row">
@@ -286,7 +299,7 @@ export default function Oral({ onBack, perfilId }) {
             </div>
           )}
 
-          {!faltanCasos && (
+          {(!faltanCasos || tiempoAgotado) && (
             <div className="btn-row">
               <button className="btn btn-ghost" onClick={generarNuevo}>
                 Generar otros 3 casos

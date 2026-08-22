@@ -79,6 +79,30 @@ export async function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_preguntas_caso ON preguntas (caso_id)
   `);
 
+  // El modo Oral no tiene opciones ni respuesta correcta (son preguntas
+  // abiertas evaluadas por IA en el momento, sin guardar la evaluación) —
+  // en su lugar usa "puntos_clave". Se guarda solo para poder revisar
+  // después qué preguntas salieron, sin registrar respuestas ni aciertos.
+  await pool.query(`ALTER TABLE preguntas ALTER COLUMN opciones DROP NOT NULL`);
+  await pool.query(`ALTER TABLE preguntas ALTER COLUMN respuesta_correcta DROP NOT NULL`);
+  await pool.query(`ALTER TABLE preguntas ADD COLUMN IF NOT EXISTS puntos_clave JSONB`);
+
+  // Enlaza cada respuesta con la pregunta concreta que se contestó (y con
+  // qué opción se eligió), para poder reconstruir el historial de preguntas
+  // ya respondidas por perfil. Antes "respuestas" solo guardaba el
+  // agregado correcto/incorrecto por área para el dial de progreso.
+  await pool.query(`
+    ALTER TABLE respuestas ADD COLUMN IF NOT EXISTS pregunta_id INTEGER REFERENCES preguntas(id) ON DELETE SET NULL
+  `);
+
+  await pool.query(`
+    ALTER TABLE respuestas ADD COLUMN IF NOT EXISTS seleccion INTEGER
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_respuestas_perfil_pregunta ON respuestas (perfil_id, pregunta_id)
+  `);
+
   // Un favorito apunta a UNA pregunta suelta (modo simulacro) O a UN caso
   // completo (modo práctica/oral, que arrastra sus 3 preguntas) — nunca
   // ambos. Se valida en el endpoint, no con un CHECK, para mantener el

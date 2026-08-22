@@ -60,7 +60,12 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
       if (!prev || prev.finalizado) return prev;
       prev.preguntas.forEach((p, i) => {
         const area = AREAS.find((a) => a.name === p.area);
-        if (area) registrar(area.id, prev.respuestas[i] === p.respuesta_correcta);
+        if (area) {
+          registrar(area.id, prev.respuestas[i] === p.respuesta_correcta, {
+            preguntaId: p.id,
+            seleccion: prev.respuestas[i]
+          });
+        }
       });
       return { ...prev, finalizado: true };
     });

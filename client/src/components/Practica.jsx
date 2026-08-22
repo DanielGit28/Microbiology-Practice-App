@@ -60,7 +60,10 @@ export default function Practica({ onBack, registrar, perfilId, favoritos, seedP
   function confirmar(i) {
     if (sesion.seleccion[i] === null) return;
     setSesion((prev) => ({ ...prev, respondido: prev.respondido.map((v, idx) => (idx === i ? true : v)) }));
-    registrar(sesion.areaId, sesion.seleccion[i] === sesion.caso.preguntas[i].respuesta_correcta);
+    registrar(sesion.areaId, sesion.seleccion[i] === sesion.caso.preguntas[i].respuesta_correcta, {
+      preguntaId: sesion.caso.preguntas[i].id,
+      seleccion: sesion.seleccion[i]
+    });
   }
 
   function togglePista(i) {
