@@ -15,7 +15,7 @@ export const MOCK_MODE = false;
 // "claude" -> Anthropic (server/.env: ANTHROPIC_API_KEY). "groq" -> Groq
 // (server/.env: GROQ_API_KEY), útil para probar gratis/barato antes de
 // pagar la API de Claude.
-export const PROVIDER = "groq"; // "claude" | "groq"
+export const PROVIDER = "claude"; // "claude" | "groq"
 
 const SYS_GENERADOR =
   "Eres un generador experto de preguntas para las Pruebas de Grado (examen escrito) de la carrera de " +
@@ -42,6 +42,34 @@ const ESTILO_KEVIN =
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Casos reales/aproximados de exámenes anteriores (server/casos-prueba.txt),
+// servidos por el backend y usados como referencia de estilo/nivel al generar
+// casos nuevos de Práctica y Oral. Se pide una sola vez por sesión de la
+// pestaña — el archivo no cambia en caliente — y si falla la carga se sigue
+// generando sin la referencia en vez de romper el flujo.
+let casosReferenciaPromise = null;
+function getCasosReferencia() {
+  if (!casosReferenciaPromise) {
+    casosReferenciaPromise = fetch("/api/casos-prueba")
+      .then((res) => (res.ok ? res.json() : { text: "" }))
+      .then((data) => data.text || "")
+      .catch(() => "");
+  }
+  return casosReferenciaPromise;
+}
+
+function conReferenciaCasos(systemBase, referencia) {
+  if (!referencia) return systemBase;
+  return (
+    systemBase +
+    "\n\nA continuación hay casos reales (o recolectados de forma aproximada) de Pruebas de Grado " +
+    "anteriores, como referencia de estilo, nivel de integración y dificultad. NO copies ningún caso ni " +
+    "pregunta literalmente ni los parafrasees — genera contenido NUEVO y distinto, inspirado únicamente en " +
+    "el nivel y el enfoque que muestran estos ejemplos:\n\n" +
+    referencia
+  );
 }
 
 // A veces el mensaje de Groq trae el tiempo de espera en el texto en vez de
@@ -332,6 +360,9 @@ async function generarCasoPracticaBase(area, kevin, seedPregunta) {
       '"'
     : "";
 
+  const referencia = await getCasosReferencia();
+  const sys = conReferenciaCasos(SYS_GENERADOR, referencia);
+
   const user =
     'Área: "' +
     area.name +
@@ -356,7 +387,7 @@ async function generarCasoPracticaBase(area, kevin, seedPregunta) {
     '"}]}\n"preguntas" debe tener EXACTAMENTE 3 elementos. "pista" debe orientar sin revelar la respuesta ' +
     'directamente. "explicacion" debe tener 2-4 frases.';
 
-  const r = await callBackendJSON(SYS_GENERADOR, user, 2200);
+  const r = await callBackendJSON(sys, user, 2200);
   return Array.isArray(r) ? r[0] : r;
 }
 
@@ -407,6 +438,9 @@ export async function generarCasoOral(area, perfilId) {
 async function generarCasoOralBase(area) {
   if (MOCK_MODE) return mockCasoOral(area);
 
+  const referencia = await getCasosReferencia();
+  const sys = conReferenciaCasos(SYS_GENERADOR, referencia);
+
   const user =
     'Área: "' +
     area.name +
@@ -422,7 +456,7 @@ async function generarCasoOralBase(area) {
     '"preguntas" debe tener EXACTAMENTE 3 elementos. "puntos_clave" son 3-5 elementos que una buena respuesta ' +
     "debería mencionar.";
 
-  const r = await callBackendJSON(SYS_GENERADOR, user, 1700);
+  const r = await callBackendJSON(sys, user, 1700);
   return Array.isArray(r) ? r[0] : r;
 }
 

@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 8787;
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-sonnet-5";
 // groq/compound-mini es un sistema agéntico que por dentro invoca otros
 // modelos (se ven llamadas separadas a openai/gpt-oss-120b y
 // llama-3.3-70b-versatile en el dashboard de Groq por cada llamada
@@ -23,9 +23,27 @@ const MODEL = "claude-sonnet-4-6";
 const GROQ_MODEL_PRIMARIO = "groq/compound-mini";
 const GROQ_MODEL_RESPALDO = "openai/gpt-oss-20b";
 
+// ---------- Casos de referencia (estático, para calibrar prompts) ----------
+// Casos clínicos reales/aproximados de exámenes anteriores, usados por el
+// cliente como referencia de estilo y nivel al generar casos nuevos (ver
+// client/src/api/api.js). Se cachea en memoria porque el archivo no cambia
+// mientras el servidor corre.
+const CASOS_PRUEBA_PATH = path.join(__dirname, "casos-prueba.txt");
+let casosPruebaCache = null;
+app.get("/api/casos-prueba", (req, res) => {
+  try {
+    if (casosPruebaCache === null) {
+      casosPruebaCache = fs.existsSync(CASOS_PRUEBA_PATH) ? fs.readFileSync(CASOS_PRUEBA_PATH, "utf8") : "";
+    }
+    res.json({ text: casosPruebaCache });
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Error leyendo los casos de referencia." });
+  }
+});
+
 // ---------- API de Claude (proxy) ----------
 app.post("/api/generate", async (req, res) => {
-  const { system, user } = req.body || {};
+  const { system, user, maxTokens } = req.body || {};
 
   if (!user) {
     return res.status(400).json({ error: 'Falta el campo "user" en el body.' });
@@ -35,6 +53,12 @@ app.post("/api/generate", async (req, res) => {
       .status(500)
       .json({ error: "Falta ANTHROPIC_API_KEY en el servidor. Revisa server/.env (copia .env.example)." });
   }
+
+  // El cliente pide distintos topes según el tipo de llamada (ver
+  // client/src/api/api.js) — un caso clínico con 3 preguntas necesita bastante
+  // más que una explicación corta. 1200 fijo cortaba a mitad el JSON de los
+  // casos más largos (p. ej. Oral, que pide hasta 1700).
+  const tope = Number.isFinite(maxTokens) ? Math.min(Math.max(maxTokens, 256), 4096) : 1200;
 
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -46,7 +70,14 @@ app.post("/api/generate", async (req, res) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 1200,
+        max_tokens: tope,
+        // Sonnet 5 piensa ("thinking" adaptativo) por defecto aunque no se pida,
+        // y ese razonamiento consume del mismo max_tokens que la respuesta —
+        // en generación de JSON simple eso puede agotar el presupuesto antes de
+        // escribir el JSON (respuesta vacía) y siempre encarece la llamada sin
+        // necesidad, ya que esta app solo pide generar/evaluar JSON, no razonar
+        // problemas complejos.
+        thinking: { type: "disabled" },
         system,
         messages: [{ role: "user", content: user }]
       })

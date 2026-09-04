@@ -1,0 +1,116 @@
+**Virologia
+
+-Nivel caso especialista
+Un laboratorio clínico recibe cuatro muestras de pacientes distintos con sospecha de diferentes infecciones virales y debe decidir la técnica diagnóstica óptima para cada uno: (1) sospecha de carga viral de VIH para monitoreo terapéutico; (2) tamizaje de banco de sangre para VHC en donante asintomático en período de ventana serológica; (3) confirmación de infección por VPH de alto riesgo en citología anormal; (4) determinación de infectividad/replicación activa en un paciente HBsAg positivo.
+
+a) Para el caso (1), ¿qué técnica molecular cuantitativa es de elección y por qué es superior a un ensayo cualitativo para el monitoreo de la respuesta al tratamiento antirretroviral?
+
+b) Para el caso (2), explique el concepto de 'período de ventana' serológico y por qué las técnicas de amplificación de ácidos nucleicos (NAT, ej. TMA) han reducido significativamente este período en comparación con la serología convencional en bancos de sangre.
+c) Para el caso (3), ¿qué método molecular de detección de VPH de alto riesgo se emplea, y qué ventaja tiene la detección de ARNm de E6/E7 sobre la simple detección de ADN viral en cuanto a especificidad para lesión activa?
+d) Para el caso (4), diferencie qué marcador serológico (no molecular) se asocia clásicamente a alta infectividad/replicación activa en Hepatitis B, y qué prueba molecular cuantitativa confirmaría directamente el nivel de replicación viral.
+
+
+-Nivel alto
+Hombre de 30 años que tuvo contacto sexual con múltiples parejas presenta lesiones umbilicadas, sobreelevadas, de aspecto perlado, sin dolor, distribuidas en tronco y área genital, además de fiebre, linfadenopatía y algunas lesiones vesiculopustulares atípicas en palmas. Viajó recientemente a una zona con brote reportado.
+a) Dado el contexto de brote y las lesiones vesiculopustulares con linfadenopatía (a diferencia del molusco contagioso clásico, que no suele generar estos hallazgos sistémicos), ¿cuál es el diagnóstico más probable a considerar?
+b) ¿A qué familia pertenece este virus y qué otra enfermedad histórica erradicada pertenece a la misma familia?
+c) Explique por qué la vacunación histórica contra la viruela confiere cierta protección cruzada contra este virus.
+d) Diferencie brevemente este cuadro del molusco contagioso, mencionando la familia y el mecanismo de transmisión de este último.
+
+
+**Hemato
+
+-Nivel especialista
+Mujer de 40 años con gingivorragia, equimosis extensas y hemograma con 80% de blastos que muestran abundantes cuerpos de Auer en forma de 'haces' (faggot cells). Laboratorio de coagulación: TP, TTPa y TT todos prolongados, fibrinógeno muy bajo, dímero D muy elevado, plaquetas 18.000/mcL.
+a) ¿Cuál es el subtipo de leucemia aguda más probable y la alteración citogenética característica?
+b) ¿Qué complicación hemostática está desarrollando esta paciente y cuál es el mecanismo?
+c) Interpretando el patrón de coagulación (los tres tiempos prolongados + fibrinógeno bajo + dímero D alto), ¿qué se puede concluir del estudio de mezclas si se realizara?
+d) ¿Qué tratamiento específico dirigido a la diferenciación celular está indicado en este subtipo, además del manejo de la coagulopatía?
+
+
+**PDG Oral IS2026 — recolección de estudiantes (aproximada, base de referencia)
+Nota: estos son los casos y preguntas que recordaron estudiantes que ya pasaron la Prueba de Grado
+Oral. El enunciado exacto y la redacción de las preguntas probablemente no son literales — se
+perdieron detalles y algunas cosas se resumieron — pero dan una idea fiel del estilo, el nivel de
+integración esperado y los temas que salen. Úsense como base/inspiración para generar casos
+similares, no como transcripción exacta.
+
+8am
+- Trasplantes: paciente hombre con problemas renales que es evaluado como candidato a
+trasplante de riñón. Preguntan quién puede donarle (¿la esposa o la hija?), qué es la
+enfermedad de injerto contra huésped, qué pruebas se hacen en inmunología, y en qué
+contexto clínico ocurre la reacción injerto contra huésped.
+- Caso Babesia: dos hombres de zona boscosa con antecedente de infestación por garrapatas.
+Presentan escalofríos, sudoración nocturna y mialgia. Se descarta enfermedad de Lyme.
+Preguntan qué protozoario es, qué pruebas de laboratorio (no moleculares) se realizan, cómo
+está el hemograma según el ciclo de vida del parásito, y con qué otro protozoario se hace
+diagnóstico diferencial.
+- Caso E. coli: urocultivo de una mujer con colonias rosadas en agar MacConkey, recuento de
+100,000 UFC/mL, resistente a cefalosporinas de 1ª hasta 4ª generación. Preguntan cuál es el
+microorganismo relacionado, el mecanismo de resistencia involucrado, y si el recuento es
+significativo o no.
+
+9am
+- Anemia megaloblástica: clasificación morfológica (MCV/función), pruebas adicionales,
+diferencia entre anemia por sangrado agudo y por mecanismo megaloblástico. Caso: paciente
+con pancitopenia, al frotis se observan neutrófilos hipersegmentados.
+- Angiostrongylus costaricensis: especie, fundamento/muestra/analito del "test de la morera",
+qué otro parásito no presenta huevecillos en heces. Caso: paciente con dolor en hipocondrio
+derecho inferior, leucocitosis con eosinofilia.
+- Fibrosis quística (genética): gen afectado, mecanismo, prueba adicional, qué es un gen. Caso:
+paciente lactante con diarreas pastosas, sudoración y sudor con sabor salado.
+
+10am
+- VIH: paciente con fiebre a repetición, candidiasis oral, linfadenopatías, CD4+ 160 cél/µL,
+carga viral 95.000. Preguntan: 1) etapa según CDC; 2) diagnóstico y agente; 3) en qué fase
+está el paciente (estadio 3, equivalente a SIDA pero sin llamarlo así según CDC); 4) qué
+prueba confirmatoria se hace después del tamizaje; 5) qué pasa si la prueba confirmatoria da
+indeterminada.
+- Caso de entomología / Leishmaniasis visceral: hepatomegalia, linfadenopatías, médula ósea
+con amastigotes intracelulares. Preguntan: 1) vector principal en Costa Rica; 2) agente causal
+principal en Costa Rica; 3) medio de cultivo utilizado; 4) qué alteraciones tendría el perfil
+hepático funcional.
+- Caso de banco de sangre: paciente que quería donar sangre pero viajó a zona endémica de
+malaria; al regresar tuvo fiebre pero no consultó. Las pruebas de tamizaje salieron no
+reactivas y el hemograma normal, pero el anti-HBc dio positivo. Preguntan: 1) a qué se refiere
+ese resultado y por qué; 2) importancia del anti-HBc; 3) qué se hace según protocolo si el
+tamizaje y la confirmatoria dan reactivas; 4) qué anticoagulante se usa para sangre total
+conservada de 21 a 35 días.
+
+11am
+- Bioquímica, caso de diabetes mellitus tipo 2: establecer el diagnóstico, el valor que lo
+respalda según criterio de la ADA, relacionar insulina/péptido C/acantosis, e interpretar una
+cetonuria positiva (¿implica cetoacidosis diabética?).
+- Micología, caso de meningitis (LCR con tinta china y antígenos capsulares solicitados):
+mencionar dos especies posibles, dos diagnósticos diferenciales, y dos pruebas inmunológicas
+para detectar antígenos capsulares (explicar el fundamento de una).
+- Microbiología industrial: un jarabe presenta turbidez. Mencionar dos cambios macroscópicos
+adicionales (distintos a la turbidez), tres pruebas microbiológicas para identificar el origen del
+microorganismo, y explicar el fundamento de una de ellas.
+
+1pm
+- Lupus: explicar la fisiopatología, mencionar una proteína de fase aguda, por qué es útil el ANA,
+relación con la activación del complemento, y el anticuerpo específico de lupus.
+- Balantioides coli: paciente con diarrea de 2 semanas de evolución, disuria y hematuria; en el
+examen general de orina se observan estructuras ovoides ciliadas.
+- Streptococcus pneumoniae: paciente con neumonía; cocos grampositivos en pareja, catalasa
+negativa. Identificar la bacteria, tipo de hemólisis, otra prueba a realizar en agar sangre, si
+existe vacuna disponible en Costa Rica, y si es de reporte obligatorio en el país.
+
+2pm
+- Leucemia linfocítica aguda: hemograma con pancitopenia, deshidrogenasa láctica y ácido
+úrico elevados, síntomas generales asociados a la anemia. Preguntan características celulares
+de los linfoblastos y por qué se produce la pancitopenia.
+- Strongyloides stercoralis: hombre de 60 años inmunosuprimido por corticoesteroides, diarrea
+acuosa persistente y eosinofilia leve. Preguntan qué factores explican que la infección se haya
+prolongado tanto, y qué método usar para analizar larvas si el examen directo resulta negativo.
+- Clostridium botulinum: caso asociado a conserva casera de vegetales. Preguntan cuál es la
+prueba para diagnosticar botulismo.
+
+
+-Nivel alto
+Hombre de 55 años en UCI por sepsis por gram negativos, desarrolla sangrado en sitios de punción, petequias generalizadas y hematuria. Laboratorio: plaquetas 35.000/mcL, TP prolongado, TTPa prolongado, TT prolongado, fibrinógeno bajo, dímero D muy elevado, esquistocitos en frotis.
+a) ¿Diagnóstico más probable y su relación con la sepsis?
+b) ¿Por qué se alteran simultáneamente TP, TTPa y TT en este paciente?
+c) ¿Por qué hay esquistocitos en el frotis de este paciente, similar a lo visto en anemia hemolítica microangiopática?
+d) Además de la sepsis, mencione otra condición hematológica que es causa clásica de esta entidad.
