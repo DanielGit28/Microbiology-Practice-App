@@ -40,6 +40,12 @@ const ESTILO_KEVIN =
   "literal del temario si el razonamiento microbiológico o clínico sigue siendo correcto y defendible. No " +
   "inventes organismos ni datos falsos.";
 
+const AL_GRANO =
+  "Sé directo y al grano: el enunciado de cada pregunta debe ser breve y preciso (2-3 líneas), sin rodeos ni " +
+  "contexto de más. El concepto evaluado puede ser tan complejo o matizado como haga falta, pero la pregunta en " +
+  "sí no debe invitar a una respuesta larga tipo ensayo — apunta a un dato, mecanismo o distinción puntual que " +
+  "se responda de forma breve y precisa. Evita frases como 'explique en detalle' o 'describa todo el proceso'.";
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -306,6 +312,8 @@ async function generarLoteSimulacroBase(areasConConteo) {
     listado +
     "\n\n" +
     ESTILO_KEVIN +
+    " " +
+    AL_GRANO +
     " Marca 'dificultad':'kevin' en las preguntas que sigan este estilo intensificado, o 'normal' en las " +
     "estándar bien fundamentadas. Procura que aproximadamente la mitad sean 'kevin'." +
     "\n\nDevuelve un array JSON con este formato exacto:\n" +
@@ -448,8 +456,11 @@ async function generarCasoOralBase(area) {
     area.temas +
     ".\n\nGenera UN caso clínico o de laboratorio breve y realista (4-8 líneas) de esta área para la Prueba de " +
     "Grado ORAL, seguido de EXACTAMENTE 3 preguntas abiertas (sin opciones) que la estudiante debe responder en " +
-    "voz alta ante el tribunal, integrando la información del caso. Deben exigir integración conceptual y " +
-    "capacidad de argumentar, no solo memorizar un dato aislado.\n\n" +
+    "voz alta ante el tribunal, integrando la información del caso. Deben exigir integración conceptual, no solo " +
+    "memorizar un dato aislado — pero apuntando a una respuesta breve y precisa (2-3 líneas habladas), no a un " +
+    "desarrollo extenso tipo ensayo. " +
+    AL_GRANO +
+    "\n\n" +
     SIN_SPOILER_CASO +
     "\n\nDevuelve SOLO este JSON:\n" +
     '{"caso":"...","preguntas":[{"pregunta":"...","puntos_clave":["...","...","..."]}]}\n' +
