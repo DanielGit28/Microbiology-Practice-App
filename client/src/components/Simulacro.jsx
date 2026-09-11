@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import Header from "./Header.jsx";
 import Dial from "./Dial.jsx";
 import { AREAS, SIMULACRO_PLAN, SIMULACRO_TOTAL_SECS } from "../data/areas.js";
-import { generarLoteSimulacro } from "../api/api.js";
+import { generarLoteSimulacro, PROVIDER } from "../api/api.js";
 import { useSesionPersistida } from "../hooks/useSesionPersistida.js";
 import { useSegundosRestantes } from "../hooks/useSegundosRestantes.js";
 
@@ -20,20 +20,28 @@ export default function Simulacro({ onBack, registrar, perfilId, favoritos }) {
     setLoadError(null);
 
     // Se agrupan las 14 áreas de 2 en 2 para mantener cada llamada a la API
-    // liviana (menos riesgo de respuestas truncadas o JSON inválido), y se
-    // piden una por una (no en paralelo): la cuenta gratuita de Groq tiene
-    // un límite de tokens por minuto y 7 llamadas simultáneas lo revientan.
+    // liviana (menos riesgo de respuestas truncadas o JSON inválido).
     const pares = [];
     for (let i = 0; i < SIMULACRO_PLAN.length; i += 2) {
       pares.push(SIMULACRO_PLAN.slice(i, i + 2));
     }
 
     try {
-      const todas = [];
-      for (const p of pares) {
-        const lote = await generarLoteSimulacro(p, perfilId);
-        if (Array.isArray(lote)) todas.push(...lote);
+      let lotes;
+      if (PROVIDER === "groq") {
+        // La cuenta gratuita de Groq tiene un límite de tokens por minuto:
+        // 7 llamadas simultáneas lo revientan, así que van una por una.
+        lotes = [];
+        for (const p of pares) {
+          lotes.push(await generarLoteSimulacro(p, perfilId));
+        }
+      } else {
+        // Claude no tiene esa restricción práctica para este volumen — en
+        // paralelo, el simulacro completo tarda lo que tarda UNA llamada en
+        // vez de siete seguidas.
+        lotes = await Promise.all(pares.map((p) => generarLoteSimulacro(p, perfilId)));
       }
+      const todas = lotes.filter(Array.isArray).flat();
       if (todas.length === 0) throw new Error("No se generaron preguntas.");
       setSesion({
         preguntas: todas,
